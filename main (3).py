@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from PIL import Image, ImageTk
 import time
-import json  # Importar la biblioteca JSON
 
 # Función para extraer información de un archivo GIF
 def obtener_datos_gif(ruta_archivo):
@@ -43,17 +42,6 @@ def guardar_datos_txt(datos, archivo_txt):
             for k, v in info.items():
                 f.write(f"{k}: {v}\n")
             f.write("\n" + "-" * 40 + "\n\n")
-
-# Guardar datos en un archivo JSON
-def guardar_datos_json(datos, archivo_json):
-    datos_json = {}
-    for archivo, info in datos:
-        datos_json[archivo] = info
-    
-    with open(archivo_json, "w") as f:
-        json.dump(datos_json, f, indent=4)
-    
-    messagebox.showinfo("Guardado", f"Datos guardados en {archivo_json}")
 
 # Clase de la pantalla de inicio
 class PantallaInicio(tk.Toplevel):
@@ -128,14 +116,12 @@ class AplicacionGIFExtractor(tk.Tk):
         self.boton_cargar_archivo = tk.Button(self.frame_botones, text="Cargar Archivo", command=self.cargar_archivo, width=20, height=2, bg="#FFC107", fg="#ffffff", font=("Arial", 10, "bold"))
         self.boton_mostrar_datos = tk.Button(self.frame_botones, text="Mostrar Datos", command=self.mostrar_datos, width=20, height=2, bg="#03A9F4", fg="#ffffff", font=("Arial", 10, "bold"))
         self.boton_guardar_txt = tk.Button(self.frame_botones, text="Guardar en TXT", command=self.guardar_txt, width=20, height=2, bg="#E91E63", fg="#ffffff", font=("Arial", 10, "bold"))
-        self.boton_guardar_json = tk.Button(self.frame_botones, text="Guardar en JSON", command=self.guardar_json, width=20, height=2, bg="#9C27B0", fg="#ffffff", font=("Arial", 10, "bold"))
         self.boton_salir = tk.Button(self.frame_botones, text="Salir", command=self.destroy, width=20, height=2, bg="#F44336", fg="#ffffff", font=("Arial", 10, "bold"))
 
         self.boton_cargar_carpeta.pack(pady=5)
         self.boton_cargar_archivo.pack(pady=5)
         self.boton_mostrar_datos.pack(pady=5)
         self.boton_guardar_txt.pack(pady=5)
-        self.boton_guardar_json.pack(pady=5)
         self.boton_salir.pack(pady=5)
 
         # Lista de archivos cargados
@@ -153,21 +139,24 @@ class AplicacionGIFExtractor(tk.Tk):
         self.canvas_imagen.pack(pady=10)
 
         # Caja de texto para mostrar datos
-        self.texto_datos = scrolledtext.ScrolledText(self.frame_derecho, wrap=tk.WORD, width=50, height=15, bg="#333333", fg="#ffffff")
-        self.texto_datos.pack(pady=10)
+        self.texto_datos = scrolledtext.ScrolledText(self.frame_derecho, wrap=tk.WORD, bg="#333333", fg="#ffffff", insertbackground='white')
+        self.texto_datos.pack(pady=(10, 20), fill=tk.BOTH, expand=True)
 
     def cargar_carpeta(self):
         directorio = filedialog.askdirectory()
         if directorio:
-            archivos = buscar_archivos_gif(directorio)
-            for archivo in archivos:
+            archivos_gif = buscar_archivos_gif(directorio)
+            self.lista_archivos.delete(0, tk.END)
+            self.archivos_datos = []
+
+            for archivo in archivos_gif:
                 datos = obtener_datos_gif(archivo)
                 if datos:
                     self.archivos_datos.append((archivo, datos))
                     self.lista_archivos.insert(tk.END, archivo)
 
     def cargar_archivo(self):
-        archivo = filedialog.askopenfilename(filetypes=[("GIF Files", "*.gif")])
+        archivo = filedialog.askopenfilename(filetypes=[("Archivos GIF", "*.gif")])
         if archivo:
             datos = obtener_datos_gif(archivo)
             if datos:
@@ -175,23 +164,59 @@ class AplicacionGIFExtractor(tk.Tk):
                 self.lista_archivos.insert(tk.END, archivo)
 
     def mostrar_datos(self):
-        self.texto_datos.delete(1.0, tk.END)
-        for archivo, datos in self.archivos_datos:
+        seleccion = self.lista_archivos.curselection()
+        if seleccion:
+            indice = seleccion[0]
+            archivo, datos = self.archivos_datos[indice]
+            self.texto_datos.delete(1.0, tk.END)
             self.texto_datos.insert(tk.END, f"Archivo: {archivo}\n")
-            for k, v in datos.items():
-                self.texto_datos.insert(tk.END, f"{k}: {v}\n")
-            self.texto_datos.insert(tk.END, "-"*40 + "\n")
+            for clave, valor in datos.items():
+                self.texto_datos.insert(tk.END, f"{clave}: {valor}\n")
+
+            # Mostrar el GIF en la vista previa
+            self.mostrar_gif(archivo)
+
+    def mostrar_gif(self, ruta_archivo):
+        self.gif_frames = []
+        self.frame_index = 0
+
+        with Image.open(ruta_archivo) as img:
+            for i in range(img.n_frames):
+                img.seek(i)
+                frame = ImageTk.PhotoImage(img.resize((150, 150), Image.LANCZOS).convert("RGBA"))
+                self.gif_frames.append(frame)
+
+        self.actualizar_gif()
+
+    def actualizar_gif(self):
+        if self.gif_frames:
+            self.canvas_imagen.config(image=self.gif_frames[self.frame_index])
+            self.frame_index = (self.frame_index + 1) % len(self.gif_frames)
+            self.after(100, self.actualizar_gif)
+            
+    def guardar_datos_actualizados(self):
+        seleccion = self.lista_archivos.curselection()
+        if seleccion:
+            indice = seleccion[0]
+            archivo, datos = self.archivos_datos[indice]
+
+            contenido = self.texto_datos.get("1.0", tk.END)
+            for linea in contenido.splitlines():
+                if linea.startswith("Comentarios:"):
+                    comentario_actualizado = linea.replace("Comentarios: ", "").strip()
+                    datos["Comentarios"] = comentario_actualizado
+
+        self.archivos_datos[indice] = (archivo, datos)
 
     def guardar_txt(self):
-        archivo_txt = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        self.guardar_datos_actualizados()
+
+        archivo_txt = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Archivo de Texto", "*.txt")])
         if archivo_txt:
             guardar_datos_txt(self.archivos_datos, archivo_txt)
+            messagebox.showinfo("Guardado", f"Datos guardados en {archivo_txt}")
 
-    def guardar_json(self):
-        archivo_json = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
-        if archivo_json:
-            guardar_datos_json(self.archivos_datos, archivo_json)
-
+    # Crear y ejecutar la aplicación
 if __name__ == "__main__":
     app = AplicacionGIFExtractor()
     app.mainloop()
